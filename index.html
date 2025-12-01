@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Patil Communication - Inventory v12 (Mobile)</title>
+    <title>Patil Communication - Inventory v13</title>
     
     <!-- React & Tailwind -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -21,11 +21,6 @@
     <style>
         body { background-color: #f8fafc; font-family: 'Segoe UI', sans-serif; -webkit-tap-highlight-color: transparent; }
         .modal-overlay { background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(3px); }
-        
-        /* Smooth Scrolling */
-        html { scroll-behavior: smooth; }
-        
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { height: 6px; width: 6px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -62,6 +57,18 @@
             .no-print { display: none !important; }
         }
         #invoice-container { position: fixed; top: -10000px; left: -10000px; }
+
+        /* Full Screen Camera Fixes */
+        #reader-live video { object-fit: cover; width: 100% !important; height: 100% !important; border-radius: 0 !important; }
+        .scan-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            border: 2px solid rgba(255,255,255,0.3);
+            box-shadow: 0 0 0 100vmax rgba(0,0,0,0.5);
+            margin: auto;
+            width: 80%; height: 40%;
+            border-radius: 20px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -138,25 +145,22 @@
 
     function App() {
         const [showIntro, setShowIntro] = useState(true);
-        const [items, setItems] = useState(() => JSON.parse(localStorage.getItem('patil_inventory_v12') || '[]'));
+        const [items, setItems] = useState(() => JSON.parse(localStorage.getItem('patil_inventory_v13') || '[]'));
         const [settings, setSettings] = useState(() => JSON.parse(localStorage.getItem('patil_settings') || JSON.stringify(DEFAULT_SETTINGS)));
         const [status, setStatus] = useState({ type: '', msg: '' });
         
-        // Workflow State
         const [workflowStep, setWorkflowStep] = useState('idle'); 
         const [currentScan, setCurrentScan] = useState(null); 
         const [editingItem, setEditingItem] = useState(null);
         const [isSettingsOpen, setIsSettingsOpen] = useState(false);
         const [isCameraOpen, setIsCameraOpen] = useState(false);
         
-        // Inputs
         const [manualDescInput, setManualDescInput] = useState("");
         const [productNameInput, setProductNameInput] = useState(""); 
         const [customerNameInput, setCustomerNameInput] = useState("");
         const [customerMobileInput, setCustomerMobileInput] = useState("");
         const [priceInput, setPriceInput] = useState("");
 
-        // Invoice Logic
         const [invoiceStep, setInvoiceStep] = useState('idle'); 
         const [invoiceItem, setInvoiceItem] = useState(null);
         const [invoiceNo, setInvoiceNo] = useState("");
@@ -173,10 +177,9 @@
         };
         const timeoutRef = useRef(null);
 
-        useEffect(() => localStorage.setItem('patil_inventory_v12', JSON.stringify(items)), [items]);
+        useEffect(() => localStorage.setItem('patil_inventory_v13', JSON.stringify(items)), [items]);
         useEffect(() => localStorage.setItem('patil_settings', JSON.stringify(settings)), [settings]);
 
-        // Auto Focus Logic
         useEffect(() => {
             if(!showIntro && !editingItem && invoiceStep === 'idle' && !isSettingsOpen && !isCameraOpen) {
                 if (workflowStep === 'idle' && inputRef.current) inputRef.current.focus();
@@ -211,15 +214,15 @@
             }
         };
 
-        // --- CAMERA SCAN ---
         const startLiveScan = () => {
             setIsCameraOpen(true);
             setTimeout(() => {
                 const html5QrCode = new Html5Qrcode("reader-live");
                 scannerRef.current = html5QrCode;
+                // No qrbox passed -> full width scanning
                 html5QrCode.start(
                     { facingMode: "environment" }, 
-                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    { fps: 15, aspectRatio: window.innerWidth / window.innerHeight }, 
                     (decodedText) => {
                         handleScan(decodedText);
                         stopLiveScan();
@@ -243,7 +246,6 @@
             }
         };
 
-        // --- SCAN LOGIC ---
         const handleScan = (code) => {
             if(!code) return;
             if (code.includes(',')) {
@@ -270,7 +272,6 @@
             if(inputRef.current) inputRef.current.value = "";
         };
 
-        // --- HANDLERS ---
         const startManualEntry = () => { setManualDescInput(""); setWorkflowStep('manual_desc'); };
         const handleManualDescSubmit = (e) => { e.preventDefault(); const desc = manualDescInput.trim() || "Manual Item / Repair"; setCurrentScan({ desc: desc, code: "MANUAL", srNo: "-", rate: 0, customerName: "", entryMethod: 'manual' }); setPriceInput(""); setCustomerNameInput(""); setWorkflowStep('customer_name'); };
         const handleProductNameSubmit = (e) => { e.preventDefault(); const name = productNameInput.trim() || "Unknown Item"; setCurrentScan(prev => ({ ...prev, desc: name })); setPriceInput(""); setCustomerNameInput(""); setWorkflowStep('customer_name'); };
@@ -289,7 +290,7 @@
                 rawDate: now.toISOString().split('T')[0],
                 desc: currentScan.desc, code: currentScan.code, srNo: currentScan.srNo, customer: currentScan.customerName || "-", 
                 gkCash: "-", gkBank: "-", unGstCash: "-", unNonGstCash: "-", un1ac: "-", un2ac: "-",
-                invoiceNo: "" // Start empty, save later
+                invoiceNo: ""
             };
             newItem[categoryKey] = price;
             setItems(prev => [newItem, ...prev]);
@@ -297,19 +298,16 @@
             handleCancel(); 
         };
 
-        // --- INVOICE LOGIC ---
         const handleRowPrint = (item) => {
             setInvoiceItem(item);
-            setInvoiceNo(item.invoiceNo || ""); // Pre-fill if exists
+            setInvoiceNo(item.invoiceNo || ""); 
             setInvoiceStep('input_no');
         };
 
         const handleInvoiceNoSubmit = (e) => {
             e.preventDefault();
-            // Update item with invoice number so it's remembered
             const updatedItem = { ...invoiceItem, invoiceNo: invoiceNo };
             setInvoiceItem(updatedItem);
-            
             setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
             setInvoiceStep('select_format');
         };
@@ -349,7 +347,6 @@
             return `INR ${num} Only`; 
         };
 
-        // --- EDIT LOGIC ---
         const handleEditClick = (item) => {
             const categories = ['gkCash', 'gkBank', 'unGstCash', 'unNonGstCash', 'un1ac', 'un2ac'];
             const activeCat = categories.find(c => item[c] !== "-") || 'gkCash';
@@ -364,7 +361,7 @@
         };
         const handleEditSave = (e) => {
             e.preventDefault();
-            const { id, currentCategory, currentPrice, editDate, editTime } = editingItem;
+            const { id, currentCategory, currentPrice } = editingItem;
             setItems(prev => prev.map(it => {
                 if (it.id === id) {
                     const updated = { ...editingItem };
@@ -390,7 +387,6 @@
             handleRowPrint(itemToPrint);
         };
 
-        // --- RENDER HELPERS ---
         const filteredItems = useMemo(() => {
             let data = items.filter(item => {
                 const matchesDate = searchDate ? item.rawDate === searchDate : true;
@@ -429,9 +425,8 @@
         if (showIntro) return <IntroAnimation onComplete={() => setShowIntro(false)} />;
 
         return (
-            <div className="min-h-screen font-sans text-slate-800 p-2 md:p-8 bg-slate-50 relative">
+            <div className="min-h-screen font-sans text-slate-800 p-4 md:p-8 bg-slate-50 relative">
                 
-                {/* --- HIDDEN INVOICE TEMPLATE --- */}
                 {invoiceItem && (
                     <div id="invoice-container">
                         <div id="invoice-section" className="w-[210mm] bg-white p-8 text-black relative">
@@ -538,9 +533,8 @@
                     </div>
                 )}
 
-                {/* --- HEADER --- */}
                 <header className="max-w-full mx-auto mb-6 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
-                    <div><h1 className="text-2xl md:text-3xl font-bold text-slate-900 flex items-center gap-2"><Icons.Package className="w-8 h-8 text-blue-600" />{settings.name}</h1><p className="text-slate-500 text-sm md:text-base">Inventory System v12.1</p></div>
+                    <div><h1 className="text-2xl md:text-3xl font-bold text-slate-900 flex items-center gap-2"><Icons.Package className="w-8 h-8 text-blue-600" />{settings.name}</h1><p className="text-slate-500 text-sm md:text-base">Inventory System v13.0</p></div>
                     <div className="flex flex-wrap justify-center gap-2 md:gap-4 items-center">
                          <div className="bg-white px-3 py-1 md:px-4 md:py-2 rounded-lg shadow-sm border border-slate-200 text-right min-w-[90px] md:min-w-[100px]"><div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase">Total Items</div><div className="text-lg md:text-xl font-bold text-slate-700">{filteredItems.length}</div></div>
                         <div className="bg-white px-3 py-1 md:px-4 md:py-2 rounded-lg shadow-sm border border-slate-200 text-right min-w-[120px] md:min-w-[140px]"><div className="text-[10px] md:text-xs text-slate-400 font-bold uppercase">Total Sales</div><div className="text-lg md:text-xl font-bold text-green-600">₹{totalSales.toFixed(2)}</div></div>
@@ -706,12 +700,22 @@
 
                 {/* LIVE CAMERA OVERLAY */}
                 {isCameraOpen && (
-                    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black bg-opacity-95 p-4">
-                        <div id="reader-live" className="w-full max-w-sm h-64 bg-black rounded-lg overflow-hidden border-2 border-green-500"></div>
-                        <button onClick={stopLiveScan} className="mt-8 bg-red-600 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg hover:bg-red-700 transition-all transform hover:scale-105 flex items-center gap-2">
-                            <Icons.X className="w-6 h-6"/> Stop Camera
-                        </button>
-                        <p className="text-gray-400 mt-4 text-sm text-center">Point camera at a barcode</p>
+                    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black bg-opacity-100">
+                        <div className="relative w-full h-full">
+                            <div id="reader-live" className="w-full h-full"></div>
+                            {/* Overlay UI */}
+                            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent">
+                                <h3 className="text-white font-bold">Scanning...</h3>
+                                <button onClick={stopLiveScan} className="text-white bg-red-500/80 px-4 py-2 rounded-full font-bold">Close</button>
+                            </div>
+                            
+                            {/* Visual Scan Area (Decorative) */}
+                            <div className="scan-overlay"></div>
+
+                            <button onClick={stopLiveScan} className="absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg flex items-center gap-2">
+                                <Icons.X className="w-6 h-6"/> Stop Camera
+                            </button>
+                        </div>
                     </div>
                 )}
 
